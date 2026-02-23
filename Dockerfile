@@ -1,5 +1,5 @@
-# Utilitzem una versió lleugera de Python
-FROM python:3.9-slim
+# Utilitzem una versió moderna de Python
+FROM python:3.11-slim
 
 # Creem la carpeta de treball
 WORKDIR /app

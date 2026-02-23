@@ -31,13 +31,9 @@ def obtenir_manifest():
     }
 
 # ---------------------------------------------------------
-# 2. EL TRADUCTOR (Cinemeta + TMDB + TVMaze + Diccionari 3Cat)
+# 2. EL TRADUCTOR (Cinemeta + TMDB + TVMaze + Diccionaris)
 # ---------------------------------------------------------
-# Afegim les traduccions de les sèries que Stremio té en anglès/japonès
-# Afegim les traduccions de les sèries que Stremio té en anglès/japonès
-# i que sabem que a TV3/3Cat tenen un nom completament diferent.
 DICCIONARI_3CAT = {
-    # Animes i Dibuixos (Els més problemàtics)
     "dragon ball": "bola de drac",
     "dragon ball z": "bola de drac z",
     "dragon ball gt": "bola de drac gt",
@@ -50,14 +46,25 @@ DICCIONARI_3CAT = {
     "magical doremi": "la màgica doremi",
     "sailor moon": "sailor moon",
     "inuyasha": "inuyasha",
-    
-    # Sèries Internacionals (Ficció comprada per TV3)
     "my brilliant friend": "l'amiga genial",
     "the collapse": "el col·lapse",
     "the paradise": "el paradís",
     "the responders": "els primers a arribar",
     "borgen": "borgen",
     "mr. bean": "mr. bean"
+}
+
+# Traduccions específiques per a noms d'episodis de Crims que venen en anglès
+DICCIONARI_EPISODIS = {
+    "grandma anita": "avia anita",
+    "the girl from portbou": "noia de portbou",
+    "the caretaker of olot": "zelador d'olot",
+    "the putxet killer": "putxet",
+    "granny killer": "assassi de iaies",
+    "the librarian helena jubany": "helena jubany",
+    "why do we kill?": "per que matem",
+    "the crime of the guardia urbana": "guardia urbana",
+    "the robbery": "atracament"
 }
 
 async def obtenir_info_stremio(tipus: str, imdb_id: str, temporada: str = None, capitol: str = None):
@@ -70,7 +77,6 @@ async def obtenir_info_stremio(tipus: str, imdb_id: str, temporada: str = None, 
     ]
 
     async with httpx.AsyncClient() as client:
-        # 1. Busquem a les bases de dades de Stremio
         for url in apis_stremio:
             try:
                 resposta = await client.get(url)
@@ -87,7 +93,6 @@ async def obtenir_info_stremio(tipus: str, imdb_id: str, temporada: str = None, 
                         for v in videos:
                             if str(v.get("season")) == str(temporada) and str(v.get("episode")) == str(capitol):
                                 t_ep = v.get("name")
-                                # Guardem el títol només si no és genèric
                                 if t_ep and not t_ep.lower().startswith("episode") and not t_ep.lower().startswith("capítulo"):
                                     titol_episodi = t_ep
                                 break
@@ -95,7 +100,6 @@ async def obtenir_info_stremio(tipus: str, imdb_id: str, temporada: str = None, 
             except Exception:
                 continue
 
-        # 2. Fallback d'emergència a TVMaze
         if not titol_serie and tipus == "series":
             try:
                 url_tvmaze = f"https://api.tvmaze.com/lookup/shows?imdb={imdb_id}"
@@ -105,18 +109,21 @@ async def obtenir_info_stremio(tipus: str, imdb_id: str, temporada: str = None, 
             except Exception:
                 pass
 
-    # --- 3. LA MÀGIA DE LA TRADUCCIÓ LOCAL ---
     if titol_serie and titol_serie.lower() in DICCIONARI_3CAT:
-        print(f"🔄 Traduint '{titol_serie}' a '{DICCIONARI_3CAT[titol_serie.lower()]}' per a 3Cat!")
         titol_serie = DICCIONARI_3CAT[titol_serie.lower()]
+
+    # TRADUCCIÓ D'EPISODIS (Neteja el "(1)", "(2)" i tradueix)
+    if titol_episodi:
+        nom_net = titol_episodi.split("(")[0].strip().lower()
+        if nom_net in DICCIONARI_EPISODIS:
+            print(f"🔄 Traduint episodi '{nom_net}' a '{DICCIONARI_EPISODIS[nom_net]}'!")
+            titol_episodi = DICCIONARI_EPISODIS[nom_net]
 
     return titol_serie, titol_episodi
 
 # ---------------------------------------------------------
-# 3. EL CERCADOR DE 3CAT (La Lògica Estricta i Flexible)
+# 3. EL CERCADOR DE 3CAT (La Lògica Estricta)
 # ---------------------------------------------------------
-import unicodedata
-
 def normalitzar(text):
     if not text: return ""
     text = str(text).lower()
@@ -164,7 +171,7 @@ async def cercar_url_3cat(titol: str, temporada: str = None, capitol: str = None
                     
                 for item in elements:
                     durada = str(item.get("durada", "00:00:00"))
-                    if durada < "00:10:00": continue # Filtre Anti-Clips curts
+                    if durada < "00:10:00": continue
                         
                     cap_api = str(item.get("capitol", ""))
                     temp_api = str(item.get("capitol_temporada", ""))
@@ -174,13 +181,14 @@ async def cercar_url_3cat(titol: str, temporada: str = None, capitol: str = None
                     programes = item.get("programes_tv", [])
                     nom_programa = normalitzar(programes[0].get("titol", "")) if programes else titol_api_norm
 
-                    if titol_buscat_norm not in nom_programa and titol_buscat_norm not in titol_api_norm:
+                    # FILTRE ESTRICTE: El vídeo ha de pertànyer al programa "Crims", no al "Telenotícies"
+                    if programes and titol_buscat_norm not in nom_programa and nom_programa not in titol_buscat_norm:
                         continue
 
                     if not capitol:
                         return extreure_enllac_3cat(item)
 
-                    # --- 0. Coincidència Nom Episodi (Crims, etc.) ---
+                    # --- 0. Coincidència Nom Episodi ---
                     if titol_ep_norm:
                         t_net = titol_ep_norm.split("(")[0].strip()
                         if len(t_net) > 3 and t_net in titol_api_norm:
@@ -193,8 +201,7 @@ async def cercar_url_3cat(titol: str, temporada: str = None, capitol: str = None
                         print(f"✅ EXACTE (Meta-Dades): {titol_api}")
                         return extreure_enllac_3cat(item)
                         
-                    # --- 2. Títol Regular (SOLUCIÓ ANTI PARTIAL-MATCH) ---
-                    # Ens assegurem que el títol tingui "t1xc1 " o "t1xc1-" per evitar agafar "t1xc19"
+                    # --- 2. Títol Regular ---
                     if f"t{temporada}xc{capitol} " in titol_api_norm + " " or f"t{temporada}xc{capitol}-" in titol_api_norm:
                         print(f"✅ EXACTE (Títol TxC): {titol_api}")
                         return extreure_enllac_3cat(item)
@@ -220,7 +227,6 @@ async def cercar_url_3cat(titol: str, temporada: str = None, capitol: str = None
     return None
 
 def extreure_enllac_3cat(item):
-    """Construeix la URL a partir del diccionari de 3cat."""
     url_video = item.get("seo_url")
     id_video = item.get("id")
     if url_video:
@@ -279,7 +285,7 @@ async def obtenir_stream(tipus: str, id_video_sencer: str):
         return {
             "streams": [
                 {
-                    "name": "󠁥3Cat",
+                    "name": "󠁥LOCAL 3Cat",
                     "title": f"{titol_real}\n{nom_capitol}",
                     "url": url_directa
                 }
