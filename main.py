@@ -239,7 +239,7 @@ async def obtenir_estructura_temporades_cinemeta(imdb_id: str) -> dict[int, int]
         temporades: dict[int, int] = {}
         try:
             url = f"https://v3-cinemeta.strem.io/meta/series/{imdb_id}.json"
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
                 r = await client.get(url)
                 r.raise_for_status()
                 meta = r.json().get("meta", {})
@@ -477,7 +477,7 @@ async def obtenir_noms_cinemeta(imdb_id: str, tipus: str) -> tuple[list[str], in
     es_animacio = False
     durada_min = None
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
             r = await client.get(url)
             r.raise_for_status()
             meta = r.json().get("meta", {})
@@ -588,25 +588,31 @@ async def _cercar_api_3cat_directe(text: str, max_pagines: int) -> list:
     return tots
 
 
+def _refresca_cerca_3cat(clau: tuple, text: str, max_pagines: int):
+    """Llança la cerca en una tasca pròpia (no es cancel·la si qui l'espera vença el termini) i en desa el resultat."""
+    tasca = asyncio.ensure_future(_cercar_api_3cat_directe(text, max_pagines))
+    _cerca_3cat_en_curs[clau] = tasca
+
+    def _fi(t):
+        _cerca_3cat_en_curs.pop(clau, None)
+        if not t.cancelled() and not t.exception() and t.result():  # no es cachegen els errors ni els buits
+            if len(_cerca_3cat_cache) > 300:
+                _cerca_3cat_cache.clear()
+            _cerca_3cat_cache[clau] = (time.time(), t.result())
+
+    tasca.add_done_callback(_fi)
+    return tasca
+
+
 async def cercar_api_3cat(text: str, max_pagines: int = 5) -> list:
     clau = (text, max_pagines)
     entrada = _cerca_3cat_cache.get(clau)
-    if entrada and time.time() - entrada[0] < CERCA_3CAT_TTL_SEGONS:
+    if entrada:
+        if time.time() - entrada[0] >= CERCA_3CAT_TTL_SEGONS and clau not in _cerca_3cat_en_curs:
+            _refresca_cerca_3cat(clau, text, max_pagines)  # caducada: es serveix la còpia antiga i es refresca en segon pla
         return entrada[1]
-    en_curs = _cerca_3cat_en_curs.get(clau)
-    if en_curs is not None:  # una altra petició ja ho està demanant: s'hi enganxa
-        return await asyncio.shield(en_curs)
-    tasca = asyncio.ensure_future(_cercar_api_3cat_directe(text, max_pagines))
-    _cerca_3cat_en_curs[clau] = tasca
-    try:
-        items = await tasca
-    finally:
-        _cerca_3cat_en_curs.pop(clau, None)
-    if items:  # no es cachegen els errors ni els buits
-        if len(_cerca_3cat_cache) > 300:
-            _cerca_3cat_cache.clear()
-        _cerca_3cat_cache[clau] = (time.time(), items)
-    return items
+    tasca = _cerca_3cat_en_curs.get(clau) or _refresca_cerca_3cat(clau, text, max_pagines)
+    return await asyncio.shield(tasca)  # si el termini de la font vence, la cerca continua i omple la cache per al següent intent
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  API DE 3CAT — EXTRACCIÓ D'STREAM
@@ -3253,7 +3259,10 @@ def cache_obtenir(clau: str) -> list | None:
     return streams
 
 def cache_guardar(clau: str, streams: list) -> None:
-    _cache_streams[clau] = (time.time(), streams)
+    # Una resposta buida pot venir d'una fallada de xarxa (TMDB/Cinemeta/3Cat inaccessibles): només es guarda 30 s
+    # perquè, quan torni Internet, el següent intent torni a buscar-ho de debò en comptes de servir "res" 5 minuts.
+    instant = time.time() if streams else time.time() - CACHE_TTL_SEGONS + 30
+    _cache_streams[clau] = (instant, streams)
 
 
 async def cercar_3cat_stream(
