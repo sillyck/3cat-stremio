@@ -50,9 +50,7 @@ Va començar sent un addon només per a 3Cat i ara és una petita pila de fonts,
 - **Coincidència intel·ligent.** Tradueix el títol internacional al nom local, entén temporades i capítols (també sagues llargues com anime amb numeració absoluta) i descarta els clips massa curts.
 - **Resposta ràpida i sense «forats».** Si una font va lenta, l'addon respon al cap de 8,5 s amb el que ja té i deixa acabar la resta en segon pla; la propera petició surt de la memòria cau. Això evita que els clients que abandonen als ~10 s vegin una llista buida.
 - **Cerca de 3Cat optimitzada.** Pàgines demanades en paral·lel, connexió reutilitzada, memòria cau de 30 minuts i peticions idèntiques compartides.
-- **Qualitat màxima per a 3Cat.** Ofereix dues opcions per a cada capítol:
-  - **`1080p`**: una sola variant fixa a la millor resolució disponible.
-  - **`Auto`**: adaptatiu, però començant per la millor variant (en lloc de la més baixa).
+- **Sempre a la màxima qualitat.** Per a cada capítol de 3Cat l'addon ofereix un únic stream, a la millor resolució disponible (normalment 1080p; 3Cat publica 576p, 720p i 1080p). Així el reproductor no arrenca a la qualitat més baixa d'un manifest adaptatiu.
 - **Opcions desactivades soles.** Una font sense credencial no es posa en marxa i no molesta.
 
 ## Com funciona
@@ -72,7 +70,7 @@ flowchart LR
     K --> A
 ```
 
-Per als vídeos de 3Cat, el reproductor demana el master HLS a `/hls/<id>.m3u8` d'aquest mateix addon. L'addon el reescriu (URLs absolutes, variants ordenades per qualitat) i el reproductor baixa el vídeo **directament de la CDN de 3Cat**: cap tros de vídeo passa pel teu servidor.
+Per als vídeos de 3Cat, el reproductor demana el master HLS a `/hls/<id>.m3u8` d'aquest mateix addon. L'addon el reescriu (URLs absolutes i només la variant de més qualitat) i el reproductor baixa el vídeo **directament de la CDN de 3Cat**: cap tros de vídeo passa pel teu servidor.
 
 ## Instal·lació
 
@@ -120,7 +118,7 @@ Es fa amb variables d'entorn (o amb el fitxer `.env`):
 
 | Variable | Obligatòria | Per a què serveix |
 |---|---|---|
-| `PUBLIC_BASE_URL` | Recomanada | URL pública de l'addon, sense barra final. Activa les opcions `1080p` i `Auto` de 3Cat. Sense ella s'usa el stream tal com el dóna l'API. |
+| `PUBLIC_BASE_URL` | Recomanada | URL pública de l'addon, sense barra final. Activa el stream de 3Cat a la màxima qualitat. Sense ella s'usa el stream tal com el dóna l'API. |
 | `TMDB_API_KEY` | Recomanada | Clau gratuïta de [TMDB](https://www.themoviedb.org/settings/api) per al mapatge de temporades quan Cinemeta no té dades. |
 | `ANIDD_PASSWORD` | No | Contrasenya d'AniDD. Si falta, aquesta font es desactiva. |
 | `RUNTIME_CS_AUTH` | No | Capçalera d'autenticació de Runtime. Si falta, aquesta font es desactiva. |
@@ -133,8 +131,7 @@ Cap secret és al codi. L'arrencada avisa als logs de quines opcions estan sense
 |---|---|
 | `GET /manifest.json` | Manifest de Stremio (tipus `movie` i `series`, prefix `tt`) |
 | `GET /stream/{tipus}/{id}.json` | Streams d'un títol, p. ex. `/stream/series/tt31452553:4:3.json` |
-| `GET /hls/{id}.m3u8` | Master HLS de 3Cat, millor qualitat primer |
-| `GET /hls/{id}.m3u8?q=max` | Master HLS amb només la millor variant |
+| `GET /hls/{id}.m3u8` | Master HLS de 3Cat amb només la millor qualitat disponible |
 
 ## Proves
 

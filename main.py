@@ -3226,12 +3226,12 @@ async def cercar_atresplayer_stream(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/hls/{video_id}.m3u8")
-async def hls_master(video_id: int, q: str = "auto"):
-    """Master HLS de 3Cat amb la millor qualitat primer (q=auto) o només la millor (q=max)."""
+async def hls_master(video_id: int):
+    """Master HLS de 3Cat amb només la millor qualitat disponible (sempre la màxima)."""
     master = await obtenir_master_hls(video_id)
     if not master:
         return Response(status_code=404)
-    cos, _ = reescriure_master_hls(master[1], master[0], nomes_millor=(q == "max"))
+    cos, _ = reescriure_master_hls(master[1], master[0], nomes_millor=True)
     return Response(content=cos, media_type="application/vnd.apple.mpegurl", headers={"Cache-Control": "no-cache"})
 
 
@@ -3259,7 +3259,7 @@ def cache_guardar(clau: str, streams: list) -> None:
 async def cercar_3cat_stream(
     tipus: str, noms: list[str], any_estrena: int | None, durada_min: int | None,
     temporada: int | None, capitol: int | None, nom_bonic: str,
-) -> dict | list | None:
+) -> dict | None:
     item_3cat = None
     if tipus == "movie":
         item_3cat = await cercar_pelicula(noms, any_estrena, durada_min)
@@ -3288,22 +3288,13 @@ async def cercar_3cat_stream(
             linia_episodi = f"\nT{temp_item} · Episodi {cap_item}"
 
     logger.info(f"[3CAT] Stream trobat (HLS fins a {millor}p)" if millor else "[3CAT] Stream trobat")
-    if millor:
-        base = f"{PUBLIC_BASE_URL}/hls/{video_id}.m3u8"
-        return [
-            {
-                "url": f"{base}?q=max",
-                "name": f"🎬 En català · {millor}p",
-                "description": f"{nom_bonic}{linia_episodi}\n📡 3Cat · {millor}p fix",
-                "behaviorHints": {"notWebReady": False},
-            },
-            {
-                "url": base,
-                "name": "🎬 En català · Auto",
-                "description": f"{nom_bonic}{linia_episodi}\n📡 3Cat · adaptatiu (comença a {millor}p)",
-                "behaviorHints": {"notWebReady": False},
-            },
-        ]
+    if millor:  # un sol stream, sempre a la màxima qualitat disponible
+        return {
+            "url": f"{PUBLIC_BASE_URL}/hls/{video_id}.m3u8",
+            "name": f"🎬 En català · {millor}p",
+            "description": f"{nom_bonic}{linia_episodi}\n📡 3Cat · {millor}p",
+            "behaviorHints": {"notWebReady": False},
+        }
     return {
         "url": stream_url,
         "name": "🎬 En català",
@@ -3520,7 +3511,7 @@ async def _avisos_configuracio():
         ("TMDB_API_KEY", TMDB_API_KEY, "sense clau TMDB fallen alguns mapatges de temporades i noms"),
         ("ANIDD_PASSWORD", ANIDD_PASSWORD, "font AniDD desactivada"),
         ("RUNTIME_CS_AUTH", RUNTIME_CS_AUTH, "font Runtime desactivada"),
-        ("PUBLIC_BASE_URL", PUBLIC_BASE_URL, "3Cat sense l'opció 1080p fixa (es fa servir el stream de l'API tal qual)"),
+        ("PUBLIC_BASE_URL", PUBLIC_BASE_URL, "3Cat sense qualitat màxima forçada (es fa servir el stream de l'API tal qual)"),
     ):
         if not valor:
             logger.warning(f"[CONFIG] {nom} no definit: {efecte}")
