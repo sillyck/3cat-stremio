@@ -1,0 +1,10 @@
+services:
+  3cat-stremio:
+    build: .
+    container_name: 3cat-stremio
+    env_file: .env
+    environment:
+      - TZ=Europe/Madrid
+    ports:
+      - "7860:7860"
+    restart: unless-stopped
